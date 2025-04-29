@@ -119,10 +119,17 @@ def split_script_by_speaker(script):
     b_lines = []
     
     for line in lines:
+        line = line.strip()
         if line.startswith('A:'):
             a_lines.append(line.replace('A:', '').strip())
         elif line.startswith('B:'):
             b_lines.append(line.replace('B:', '').strip())
+    
+    # デバッグ情報を表示
+    st.write("先生役のセリフ数:", len(a_lines))
+    st.write("生徒役のセリフ数:", len(b_lines))
+    st.write("先生役のセリフ:", a_lines)
+    st.write("生徒役のセリフ:", b_lines)
     
     return {
         'teacher': ' '.join(a_lines),
