@@ -148,22 +148,40 @@ def split_script_by_speaker(script):
 
 def convert_to_ssml(text):
     """テキストをSSML形式に変換する"""
-    # 基本的なSSMLタグを追加
+    # テキストを文単位に分割
+    sentences = []
+    current_sentence = ""
+    
+    for char in text:
+        current_sentence += char
+        if char in ["。", "？", "！"]:
+            sentences.append(current_sentence.strip())
+            current_sentence = ""
+    
+    if current_sentence:
+        sentences.append(current_sentence.strip())
+    
+    # 各文にSSMLタグを追加
+    processed_sentences = []
+    for sentence in sentences:
+        # 文節の区切りを処理
+        sentence = sentence.replace("「", "<break time='200ms'/>「")
+        sentence = sentence.replace("」", "」<break time='200ms'/>")
+        
+        # 句読点の処理
+        sentence = sentence.replace("、", "、<break time='300ms'/>")
+        
+        processed_sentences.append(sentence)
+    
+    # 文を結合
+    processed_text = "<break time='500ms'/>".join(processed_sentences)
+    
+    # 最終的なSSMLを構築
     ssml = f"""<speak>
     <prosody rate="1.0">
-        {text}
+        {processed_text}
     </prosody>
     </speak>"""
-    
-    # 句読点の後に間を追加
-    ssml = ssml.replace("。", "。<break time='500ms'/>")
-    ssml = ssml.replace("、", "、<break time='300ms'/>")
-    ssml = ssml.replace("？", "？<break time='500ms'/>")
-    ssml = ssml.replace("！", "！<break time='500ms'/>")
-    
-    # 文節の区切りを追加
-    ssml = ssml.replace("「", "<break time='200ms'/>「")
-    ssml = ssml.replace("」", "」<break time='200ms'/>")
     
     # 余分な空白を削除
     ssml = ssml.replace("  ", " ")
