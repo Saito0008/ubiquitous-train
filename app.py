@@ -147,13 +147,20 @@ def generate_script(article_info):
     start_time = time.time()
     total_cost_usd = 0
     
-    with st.status("記事を処理中...", expanded=True) as status:
+    # 全体の進捗を表示
+    progress_bar = st.progress(0)
+    time_placeholder = st.empty()
+    status_placeholder = st.empty()
+    
+    with status_placeholder.container():
         # ステップ1のステータス表示
-        status.update(label="Step 1: 記事を要約中...")
+        status_placeholder.markdown("### Step 1: 記事を要約中...")
         summary = summarize_article(article_info)
+        progress_bar.progress(0.2)
+        time_placeholder.text(f"残り時間: 約{int(60 - (time.time() - start_time))}秒")
         
         # ステップ2のステータス表示
-        status.update(label="Step 2: 台本を生成中...")
+        status_placeholder.markdown("### Step 2: 台本を生成中...")
         prompt = (
             "以下の要約された記事内容を基に、テーマや結論がしっかり伝わるように、"
             "聞き手が理解しやすい長さ（最大20分、ベストな長さはお任せします）で、"
@@ -196,9 +203,6 @@ def generate_script(article_info):
         input_cost_usd = format_cost_usd(input_tokens)
         total_cost_usd += input_cost_usd
         
-        progress_bar = st.progress(0)
-        time_placeholder = st.empty()
-        
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
@@ -213,16 +217,14 @@ def generate_script(article_info):
         for chunk in response:
             if chunk.choices[0].delta.content:
                 generated_text += chunk.choices[0].delta.content
-                progress = min(0.95, (time.time() - start_time) / estimated_time)
+                progress = min(0.6, 0.2 + (time.time() - start_time) / estimated_time)
                 progress_bar.progress(progress)
                 
                 elapsed_time = time.time() - start_time
                 remaining_time = max(0, estimated_time - elapsed_time)
                 time_placeholder.text(f"残り時間: 約{int(remaining_time)}秒")
-                
-                status.update(label=f"台本を生成中... ({int(progress * 100)}%)")
         
-        progress_bar.progress(1.0)
+        progress_bar.progress(0.6)
         time_placeholder.text("台本の生成が完了しました！")
         
         # 出力トークン数からコストを計算
@@ -230,15 +232,22 @@ def generate_script(article_info):
         output_cost_usd = format_cost_usd(output_tokens)
         total_cost_usd += output_cost_usd
         
-        # 台本を表示
-        st.text_area("生成された台本", generated_text.strip(), height=300)
-        
-        # 音声生成に進む
-        status.update(label="Step 3: 音声を生成中...")
+        # ステップ3のステータス表示
+        status_placeholder.markdown("### Step 3: 音声を生成中...")
         combined_file, tts_cost_usd = generate_tts(generated_text.strip())
         total_cost_usd += tts_cost_usd
         
-        status.update(label="処理が完了しました！", state="complete")
+        progress_bar.progress(1.0)
+        time_placeholder.text("処理が完了しました！")
+        status_placeholder.markdown("### ✅ 処理が完了しました！")
+        
+        # 台本と音声を表示
+        st.markdown("### 📝 生成された台本")
+        st.text_area("", generated_text.strip(), height=300)
+        
+        st.markdown("### 🔊 生成された音声")
+        st.audio(combined_file)
+        
         return combined_file, total_cost_usd
 
 # 音声の種類を定義
@@ -265,14 +274,18 @@ def convert_to_ssml(text):
     </speak>"""
     
     # 句読点の後に間を追加（タグを正しく処理）
-    ssml = ssml.replace("。", "。<break time='0.5s'/>")
-    ssml = ssml.replace("、", "、<break time='0.3s'/>")
-    ssml = ssml.replace("？", "？<break time='0.5s'/>")
-    ssml = ssml.replace("！", "！<break time='0.5s'/>")
+    ssml = ssml.replace("。", "。<break time='500ms'/>")
+    ssml = ssml.replace("、", "、<break time='300ms'/>")
+    ssml = ssml.replace("？", "？<break time='500ms'/>")
+    ssml = ssml.replace("！", "！<break time='500ms'/>")
     
     # 文節の区切りを追加（タグを正しく処理）
-    ssml = ssml.replace("「", "<break time='0.2s'/>「")
-    ssml = ssml.replace("」", "」<break time='0.2s'/>")
+    ssml = ssml.replace("「", "<break time='200ms'/>「")
+    ssml = ssml.replace("」", "」<break time='200ms'/>")
+    
+    # 余分な空白を削除
+    ssml = ssml.replace("  ", " ")
+    ssml = ssml.replace("\n", " ")
     
     return ssml
 
@@ -282,54 +295,54 @@ def generate_tts(script):
     dialogues = split_script_by_speaker(script)
     total_dialogues = len(dialogues)
     
-    # 進捗表示の設定
-    progress_bar = st.progress(0)
-    time_placeholder = st.empty()
-    
     # 各セリフの音声を生成して結合
     combined_audio = None
     sr = None
     
     for i, dialogue in enumerate(dialogues):
         # 進捗表示の更新
-        progress = (i + 1) / total_dialogues
-        progress_bar.progress(progress)
-        time_placeholder.text(f"セリフ {i+1}/{total_dialogues} を生成中...")
+        progress = 0.6 + (i + 1) / total_dialogues * 0.4
+        st.progress(progress)
         
         # テキストをSSML形式に変換
         ssml_text = convert_to_ssml(dialogue['text'])
         
-        # 音声を生成
-        response = client.audio.speech.create(
-            model="tts-1",
-            voice=st.session_state.teacher_voice if dialogue['speaker'] == 'teacher' else st.session_state.student_voice,
-            input=ssml_text,
-            response_format="mp3"
-        )
-        
-        # 一時ファイルとして保存
-        temp_file = f"temp_{dialogue['speaker']}_{i}.mp3"
-        with open(temp_file, "wb") as f:
-            f.write(response.content)
-        
-        # 音声を読み込む
-        audio, current_sr = librosa.load(temp_file, sr=None)
-        if sr is None:
-            sr = current_sr
-        
-        # 音声を正規化
-        audio = librosa.util.normalize(audio)
-        
-        # 音声を結合
-        if combined_audio is None:
-            combined_audio = audio
-        else:
-            # 0.5秒の無音を追加
-            silence = np.zeros(int(0.5 * sr))
-            combined_audio = np.concatenate([combined_audio, silence, audio])
-        
-        # 一時ファイルを削除
-        os.remove(temp_file)
+        try:
+            # 音声を生成
+            response = client.audio.speech.create(
+                model="tts-1",
+                voice=st.session_state.teacher_voice if dialogue['speaker'] == 'teacher' else st.session_state.student_voice,
+                input=ssml_text,
+                response_format="mp3"
+            )
+            
+            # 一時ファイルとして保存
+            temp_file = f"temp_{dialogue['speaker']}_{i}.mp3"
+            with open(temp_file, "wb") as f:
+                f.write(response.content)
+            
+            # 音声を読み込む
+            audio, current_sr = librosa.load(temp_file, sr=None)
+            if sr is None:
+                sr = current_sr
+            
+            # 音声を正規化
+            audio = librosa.util.normalize(audio)
+            
+            # 音声を結合
+            if combined_audio is None:
+                combined_audio = audio
+            else:
+                # 0.5秒の無音を追加
+                silence = np.zeros(int(0.5 * sr))
+                combined_audio = np.concatenate([combined_audio, silence, audio])
+            
+            # 一時ファイルを削除
+            os.remove(temp_file)
+            
+        except Exception as e:
+            st.error(f"音声生成中にエラーが発生しました: {str(e)}")
+            return None, 0
     
     # 結合した音声を保存
     output_file = "output_combined.mp3"
