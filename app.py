@@ -20,7 +20,7 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 HISTORY_FILE = "audio_history.json"
 
 # アプリケーションのバージョン
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 
 def load_history():
     """履歴をファイルから読み込む"""
@@ -190,22 +190,22 @@ def convert_to_ssml(text):
         processed_parts = []
         for i, part in enumerate(parts):
             if part.startswith("「"):
-                processed_parts.append(f"<break time='200ms'/>{part}")
+                processed_parts.append(f"<break strength='medium'/>{part}")
             elif part.endswith("」"):
-                processed_parts.append(f"{part}<break time='200ms'/>")
+                processed_parts.append(f"{part}<break strength='medium'/>")
             else:
                 # 句読点の処理
-                part = part.replace("、", "、<break time='300ms'/>")
+                part = part.replace("、", "、<break strength='x-weak'/>")
                 processed_parts.append(part)
         
         processed_sentence = "".join(processed_parts)
         processed_sentences.append(processed_sentence)
     
     # 文を結合
-    processed_text = "<break time='500ms'/>".join(processed_sentences)
+    processed_text = "<break strength='strong'/>".join(processed_sentences)
     
     # 最終的なSSMLを構築
-    ssml = f"""<speak>
+    ssml = f"""<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="ja-JP">
     <prosody rate="1.0">
         {processed_text}
     </prosody>
