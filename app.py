@@ -58,44 +58,43 @@ def get_article_text(url):
 
 def summarize_article(article_info):
     """記事を要約する"""
-    with st.status("記事を要約中...", expanded=True) as status:
-        # 記事の本文と画像情報を組み合わせる
-        article_content = f"記事タイトル: {article_info['title']}\n\n"
-        
-        # 画像の説明を追加
-        if article_info['images']:
-            article_content += "記事内の画像:\n"
-            for i, img_url in enumerate(article_info['images'], 1):
-                article_content += f"画像{i}: {img_url}\n"
-            article_content += "\n"
-        
-        article_content += f"記事本文:\n{article_info['text']}"
-        
-        prompt = (
-            "以下の記事（本文と画像を含む）の内容を、重要なポイントを逃さないように要約してください。\n"
-            "特に画像の内容も含めて要約してください。\n\n"
-            "【記事内容】\n"
-            f"{article_content}\n\n"
-            "【要約】"
-        )
-        
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-        )
-        
-        status.update(label="要約完了！", state="complete")
-        return response.choices[0].message.content.strip()
+    # 記事の本文と画像情報を組み合わせる
+    article_content = f"記事タイトル: {article_info['title']}\n\n"
+    
+    # 画像の説明を追加
+    if article_info['images']:
+        article_content += "記事内の画像:\n"
+        for i, img_url in enumerate(article_info['images'], 1):
+            article_content += f"画像{i}: {img_url}\n"
+        article_content += "\n"
+    
+    article_content += f"記事本文:\n{article_info['text']}"
+    
+    prompt = (
+        "以下の記事（本文と画像を含む）の内容を、重要なポイントを逃さないように要約してください。\n"
+        "特に画像の内容も含めて要約してください。\n\n"
+        "【記事内容】\n"
+        f"{article_content}\n\n"
+        "【要約】"
+    )
+    
+    response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7,
+    )
+    
+    return response.choices[0].message.content.strip()
 
 def generate_script(article_info):
     start_time = time.time()
     
     with st.status("台本を生成中...", expanded=True) as status:
-        # まず記事を要約
+        # ステップ1のステータス表示
         status.update(label="Step 1: 記事を要約中...")
         summary = summarize_article(article_info)
         
+        # ステップ2のステータス表示
         status.update(label="Step 2: 台本を生成中...")
         prompt = (
             "以下の要約された記事内容を基に、テーマや結論がしっかり伝わるように、"
