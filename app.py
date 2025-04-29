@@ -146,115 +146,22 @@ def split_script_by_speaker(script):
     
     return dialogues
 
-def generate_script(article_info):
-    total_cost_usd = 0
-    
-    # ステップ1: 記事の要約
-    st.markdown("### 記事を要約中...")
-    summary = summarize_article(article_info)
-    
-    # ステップ2: 台本の生成
-    st.markdown("### 台本を生成中...")
-    prompt = (
-        "以下の要約された記事内容を基に、テーマや結論がしっかり伝わるように、"
-        "聞き手が理解しやすい長さ（最大20分、ベストな長さはお任せします）で、"
-        "日本語のポッドキャスト台本にしてください。\n\n"
-        "【台本の形式】\n"
-        "- プロフェッショナルなホストA（先生役）と、初学者のホストB（生徒役）による対話形式\n"
-        "- 各発言の前に「A:」「B:」をつけて、誰の発言かを明確にする\n"
-        "- 会話の間は「...」ではなく「、」や「。」を使って自然な間を表現\n"
-        "- 最後に記事の重要なポイントをまとめて締めくくってください\n"
-        "- BGMや効果音などの演出指示は含めない\n\n"
-        "【台本の内容について】\n"
-        "- 専門用語が出てきたら、必ず身近な例を使って説明してください\n"
-        "- 「なぜそうなるのか」という理由や背景を丁寧に説明してください\n"
-        "- 抽象的な概念は具体的な例を使って説明してください\n"
-        "- 重要なポイントは繰り返し説明してください\n"
-        "- 生徒役（B）は適度に質問や疑問を投げかけ、理解を深めるようにしてください\n"
-        "- 先生役（A）は生徒の理解度を確認しながら、必要に応じて補足説明をしてください\n\n"
-        "【日本語の表現について】\n"
-        "- 自然な日本語のイントネーションになるように、適切な句読点を使用してください\n"
-        "- 重要な部分は強調するように、文の構造を工夫してください\n"
-        "- 会話の流れを考慮して、適切な間を取るようにしてください\n"
-        "- 文末表現は「です・ます」調を基本とし、必要に応じて「だ・である」調も使用してください\n\n"
-        "【画像の扱いについて】\n"
-        "- 画像の内容を単に説明するのではなく、その意図や伝えたいメッセージを会話の中で自然に伝えてください\n"
-        "- 例えば、象とりんごの大きさを比較する画像がある場合、\n"
-        "  ×「象とりんごの画像があります」\n"
-        "  ○「りんごは象と比較すると何倍も小さいです」\n"
-        "  のように、画像の意図を会話の中で自然に説明してください\n"
-        "- 画像の視覚的な要素（色、形、配置など）が重要な場合は、その効果や意図を説明してください\n"
-        "- 複数の画像がある場合は、それらの関連性やストーリー性を活かして説明してください\n\n"
-        "【記事タイトル】\n"
-        f"{article_info['title']}\n\n"
-        "【要約された内容】\n"
-        f"{summary}\n\n"
-        "【ポッドキャスト台本】"
-    )
-    
-    # トークン数を計算
-    input_tokens = count_tokens(prompt)
-    input_cost_usd = format_cost_usd(input_tokens)
-    total_cost_usd += input_cost_usd
-    
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=4000,
-        temperature=0.8
-    )
-    
-    generated_text = response.choices[0].message.content
-    
-    # 出力トークン数からコストを計算
-    output_tokens = count_tokens(generated_text)
-    output_cost_usd = format_cost_usd(output_tokens)
-    total_cost_usd += output_cost_usd
-    
-    # ステップ3: 音声の生成
-    st.markdown("### 音声を生成中...")
-    combined_file, tts_cost_usd = generate_tts(generated_text.strip())
-    total_cost_usd += tts_cost_usd
-    
-    # 結果表示
-    st.markdown("### 📝 生成された台本")
-    st.text_area("", generated_text.strip(), height=300)
-    
-    st.markdown("### 🔊 生成された音声")
-    st.audio(combined_file)
-    
-    return combined_file, total_cost_usd
-
-# 音声の種類を定義
-VOICE_OPTIONS = {
-    "男性の声": {
-        "alloy": "標準的な男性の声",
-        "echo": "落ち着いた男性の声",
-        "fable": "若々しい男性の声"
-    },
-    "女性の声": {
-        "nova": "標準的な女性の声",
-        "shimmer": "落ち着いた女性の声",
-        "onyx": "力強い女性の声"
-    }
-}
-
 def convert_to_ssml(text):
     """テキストをSSML形式に変換する"""
     # 基本的なSSMLタグを追加
     ssml = f"""<speak>
-    <prosody rate="1.0" pitch="0.0">
+    <prosody rate="1.0">
         {text}
     </prosody>
     </speak>"""
     
-    # 句読点の後に間を追加（タグを正しく処理）
+    # 句読点の後に間を追加
     ssml = ssml.replace("。", "。<break time='500ms'/>")
     ssml = ssml.replace("、", "、<break time='300ms'/>")
     ssml = ssml.replace("？", "？<break time='500ms'/>")
     ssml = ssml.replace("！", "！<break time='500ms'/>")
     
-    # 文節の区切りを追加（タグを正しく処理）
+    # 文節の区切りを追加
     ssml = ssml.replace("「", "<break time='200ms'/>「")
     ssml = ssml.replace("」", "」<break time='200ms'/>")
     
@@ -325,12 +232,136 @@ def generate_tts(script):
     
     return output_file, tts_cost_usd
 
+def generate_script(article_info):
+    total_cost_usd = 0
+    
+    # 進捗表示用のコンテナを作成
+    progress_container = st.container()
+    with progress_container:
+        st.markdown("### 進捗状況")
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        time_text = st.empty()
+    
+    # ステップ1: 記事の要約
+    with progress_container:
+        status_text.markdown("**ステップ1: 記事を要約中...**")
+        time_text.markdown("残り時間: 約30秒")
+        progress_bar.progress(20)
+    
+    summary = summarize_article(article_info)
+    
+    # ステップ2: 台本の生成
+    with progress_container:
+        status_text.markdown("**ステップ2: 台本を生成中...**")
+        time_text.markdown("残り時間: 約1分")
+        progress_bar.progress(50)
+    
+    prompt = (
+        "以下の要約された記事内容を基に、テーマや結論がしっかり伝わるように、"
+        "聞き手が理解しやすい長さ（最大20分、ベストな長さはお任せします）で、"
+        "日本語のポッドキャスト台本にしてください。\n\n"
+        "【台本の形式】\n"
+        "- プロフェッショナルなホストA（先生役）と、初学者のホストB（生徒役）による対話形式\n"
+        "- 各発言の前に「A:」「B:」をつけて、誰の発言かを明確にする\n"
+        "- 会話の間は「...」ではなく「、」や「。」を使って自然な間を表現\n"
+        "- 最後に記事の重要なポイントをまとめて締めくくってください\n"
+        "- BGMや効果音などの演出指示は含めない\n\n"
+        "【台本の内容について】\n"
+        "- 専門用語が出てきたら、必ず身近な例を使って説明してください\n"
+        "- 「なぜそうなるのか」という理由や背景を丁寧に説明してください\n"
+        "- 抽象的な概念は具体的な例を使って説明してください\n"
+        "- 重要なポイントは繰り返し説明してください\n"
+        "- 生徒役（B）は適度に質問や疑問を投げかけ、理解を深めるようにしてください\n"
+        "- 先生役（A）は生徒の理解度を確認しながら、必要に応じて補足説明をしてください\n\n"
+        "【日本語の表現について】\n"
+        "- 自然な日本語のイントネーションになるように、適切な句読点を使用してください\n"
+        "- 重要な部分は強調するように、文の構造を工夫してください\n"
+        "- 会話の流れを考慮して、適切な間を取るようにしてください\n"
+        "- 文末表現は「です・ます」調を基本とし、必要に応じて「だ・である」調も使用してください\n\n"
+        "【画像の扱いについて】\n"
+        "- 画像の内容を単に説明するのではなく、その意図や伝えたいメッセージを会話の中で自然に伝えてください\n"
+        "- 例えば、象とりんごの大きさを比較する画像がある場合、\n"
+        "  ×「象とりんごの画像があります」\n"
+        "  ○「りんごは象と比較すると何倍も小さいです」\n"
+        "  のように、画像の意図を会話の中で自然に説明してください\n"
+        "- 画像の視覚的な要素（色、形、配置など）が重要な場合は、その効果や意図を説明してください\n"
+        "- 複数の画像がある場合は、それらの関連性やストーリー性を活かして説明してください\n\n"
+        "【記事タイトル】\n"
+        f"{article_info['title']}\n\n"
+        "【要約された内容】\n"
+        f"{summary}\n\n"
+        "【ポッドキャスト台本】"
+    )
+    
+    # トークン数を計算
+    input_tokens = count_tokens(prompt)
+    input_cost_usd = format_cost_usd(input_tokens)
+    total_cost_usd += input_cost_usd
+    
+    response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=4000,
+        temperature=0.8
+    )
+    
+    generated_text = response.choices[0].message.content
+    
+    # 出力トークン数からコストを計算
+    output_tokens = count_tokens(generated_text)
+    output_cost_usd = format_cost_usd(output_tokens)
+    total_cost_usd += output_cost_usd
+    
+    # ステップ3: 音声の生成
+    with progress_container:
+        status_text.markdown("**ステップ3: 音声を生成中...**")
+        time_text.markdown("残り時間: 約2分")
+        progress_bar.progress(80)
+    
+    combined_file, tts_cost_usd = generate_tts(generated_text.strip())
+    total_cost_usd += tts_cost_usd
+    
+    # 完了
+    with progress_container:
+        status_text.markdown("**✅ 処理が完了しました！**")
+        time_text.empty()
+        progress_bar.progress(100)
+    
+    # 結果表示
+    st.markdown("### 📝 生成された台本")
+    st.text_area("", generated_text.strip(), height=300)
+    
+    st.markdown("### 🔊 生成された音声")
+    st.audio(combined_file)
+    
+    return combined_file, total_cost_usd
+
+# 音声の種類を定義
+VOICE_OPTIONS = {
+    "男性の声": {
+        "alloy": "標準的な男性の声",
+        "echo": "落ち着いた男性の声",
+        "fable": "若々しい男性の声"
+    },
+    "女性の声": {
+        "nova": "標準的な女性の声",
+        "shimmer": "落ち着いた女性の声",
+        "onyx": "力強い女性の声"
+    }
+}
+
 # 音声履歴を初期化
 if 'audio_history' not in st.session_state:
     st.session_state.audio_history = load_history()
 
-st.title("記事URLからポッドキャスト風音声生成アプリ")
-st.markdown(f"**バージョン: {APP_VERSION}**")
+# バージョン情報を表示
+st.markdown("""
+<div style='background-color: #f0f2f6; padding: 10px; border-radius: 5px; margin-bottom: 20px;'>
+    <h1 style='color: #262730; margin-bottom: 0;'>記事URLからポッドキャスト風音声生成アプリ</h1>
+    <p style='color: #666; margin-top: 5px;'>バージョン: {}</p>
+</div>
+""".format(APP_VERSION), unsafe_allow_html=True)
 
 # サイドバーに音声選択を追加
 with st.sidebar:
