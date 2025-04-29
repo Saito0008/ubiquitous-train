@@ -1,8 +1,12 @@
 FROM python:3.9-slim
 
-# ffmpegをインストール
+# ffmpegとffprobeをインストール
 RUN apt-get update && apt-get install -y \
     ffmpeg \
+    libavcodec-extra \
+    libavformat-extra \
+    libavutil-extra \
+    libswscale-extra \
     && rm -rf /var/lib/apt/lists/*
 
 # アプリケーションの依存関係をインストール
