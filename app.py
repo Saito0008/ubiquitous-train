@@ -7,6 +7,7 @@ import requests
 from datetime import datetime
 from pydub import AudioSegment
 import os
+import ffmpeg
 
 # secretsからAPIキーを取得
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
@@ -82,22 +83,18 @@ def summarize_article(article_info):
 
 def combine_audio_files(teacher_file, student_file, output_file="output_combined.mp3"):
     """音声ファイルを結合する"""
-    teacher_audio = AudioSegment.from_mp3(teacher_file)
-    student_audio = AudioSegment.from_mp3(student_file)
-    
-    # 音声を交互に配置
-    combined = AudioSegment.empty()
-    teacher_parts = teacher_audio.split_to_mono()[0]
-    student_parts = student_audio.split_to_mono()[0]
+    # 音声ファイルを読み込む
+    teacher_audio = ffmpeg.input(teacher_file)
+    student_audio = ffmpeg.input(student_file)
     
     # 0.5秒の無音を作成
-    silence = AudioSegment.silent(duration=500)
+    silence = ffmpeg.input('anullsrc=r=44100:cl=mono', f='lavfi', t=0.5)
     
     # 音声を結合
-    combined = teacher_parts + silence + student_parts
+    combined = ffmpeg.concat(teacher_audio, silence, student_audio, v=0, a=1)
     
     # 結合した音声を保存
-    combined.export(output_file, format="mp3")
+    combined.output(output_file).run(overwrite_output=True)
     return output_file
 
 def split_script_by_speaker(script):
