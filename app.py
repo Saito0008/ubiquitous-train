@@ -9,6 +9,7 @@ import librosa
 import soundfile as sf
 import numpy as np
 import os
+import uuid
 
 # secretsからAPIキーを取得
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
@@ -84,19 +85,32 @@ def summarize_article(article_info):
 
 def combine_audio_files(teacher_file, student_file, output_file="output_combined.mp3"):
     """音声ファイルを結合する"""
-    # 音声ファイルを読み込む
-    teacher_audio, sr = librosa.load(teacher_file, sr=None)
-    student_audio, _ = librosa.load(student_file, sr=sr)
-    
-    # 0.5秒の無音を作成
-    silence = np.zeros(int(0.5 * sr))
-    
-    # 音声を結合
-    combined = np.concatenate([teacher_audio, silence, student_audio])
-    
-    # 結合した音声を保存
-    sf.write(output_file, combined, sr)
-    return output_file
+    try:
+        # 音声ファイルを読み込む
+        teacher_audio, sr = librosa.load(teacher_file, sr=None)
+        student_audio, _ = librosa.load(student_file, sr=sr)
+        
+        # 0.5秒の無音を作成
+        silence = np.zeros(int(0.5 * sr))
+        
+        # 音声を結合（正規化してから結合）
+        teacher_audio = librosa.util.normalize(teacher_audio)
+        student_audio = librosa.util.normalize(student_audio)
+        combined = np.concatenate([teacher_audio, silence, student_audio])
+        
+        # 結合した音声を保存（正規化してから保存）
+        combined = librosa.util.normalize(combined)
+        sf.write(output_file, combined, sr)
+        
+        # 結合した音声を確認
+        st.audio(teacher_file, format="audio/mp3")
+        st.audio(student_file, format="audio/mp3")
+        st.audio(output_file, format="audio/mp3")
+        
+        return output_file
+    except Exception as e:
+        st.error(f"音声の結合中にエラーが発生しました: {str(e)}")
+        return None
 
 def split_script_by_speaker(script):
     """台本をA（先生）とB（生徒）のパートに分割"""
@@ -193,20 +207,30 @@ def generate_tts(script):
         # 台本を話者ごとに分割
         parts = split_script_by_speaker(script)
         
-        # 先生役（Alloy）と生徒役（Nova）の音声を生成
+        # 先生役（Alloy）の音声を生成
         status.update(label="先生役の音声を生成中...")
+        progress_bar = st.progress(0)
+        time_placeholder = st.empty()
+        
         teacher_response = client.audio.speech.create(
             model="tts-1",
             voice="alloy",  # プロフェッショナルな声
             input=parts['teacher']
         )
         
+        progress_bar.progress(0.5)
+        time_placeholder.text("先生役の音声生成完了！")
+        
+        # 生徒役（Nova）の音声を生成
         status.update(label="生徒役の音声を生成中...")
         student_response = client.audio.speech.create(
             model="tts-1",
             voice="nova",  # フレンドリーな声
             input=parts['student']
         )
+        
+        progress_bar.progress(1.0)
+        time_placeholder.text("生徒役の音声生成完了！")
         
         # 一時ファイルとして保存
         teacher_file = "temp_teacher.mp3"
@@ -231,6 +255,10 @@ def generate_tts(script):
         
         status.update(label="音声の生成が完了しました！", state="complete")
         return combined_file, tts_cost_usd
+
+# 音声履歴を保持するセッションステート
+if 'audio_history' not in st.session_state:
+    st.session_state.audio_history = []
 
 st.title("記事URLからポッドキャスト風音声生成アプリ")
 
@@ -266,8 +294,14 @@ if st.button("台本生成＆音声化"):
             with open(combined_file, "rb") as f:
                 st.download_button("音声をダウンロード", f, file_name="podcast.mp3", mime="audio/mp3")
             
-            # 一時ファイルを削除
-            os.remove(combined_file)
+            # 音声履歴に追加
+            history_item = {
+                'id': str(uuid.uuid4()),
+                'title': article_info['title'],
+                'file': combined_file,
+                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            st.session_state.audio_history.append(history_item)
             
             # 総コストを表示
             total_cost_usd = text_cost_usd + tts_cost_usd
@@ -275,3 +309,18 @@ if st.button("台本生成＆音声化"):
             
         except Exception as e:
             st.error(f"エラーが発生しました: {str(e)}")
+
+# 音声履歴を表示
+if st.session_state.audio_history:
+    st.markdown("### 📚 生成履歴")
+    for item in reversed(st.session_state.audio_history):
+        with st.expander(f"{item['title']} - {item['timestamp']}"):
+            st.audio(item['file'])
+            with open(item['file'], "rb") as f:
+                st.download_button(
+                    "音声をダウンロード",
+                    f,
+                    file_name=f"podcast_{item['timestamp']}.mp3",
+                    mime="audio/mp3",
+                    key=f"dl_{item['id']}"
+                )
