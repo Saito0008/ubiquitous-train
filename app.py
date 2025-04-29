@@ -5,6 +5,8 @@ import time
 import tiktoken
 import requests
 from datetime import datetime
+from pydub import AudioSegment
+import os
 
 # secretsからAPIキーを取得
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
@@ -38,23 +40,15 @@ def format_cost_usd(tokens: int) -> float:
     return (tokens * 0.03) / 1000
 
 def get_article_text(url):
-    with st.status("記事を取得中...", expanded=True) as status:
-        article = Article(url, language='ja')
-        article.download()
-        status.update(label="記事の解析中...")
-        article.parse()
-        
-        # 記事の情報を辞書で返す
-        article_info = {
-            'text': article.text,
-            'title': article.title,
-            'images': article.images,  # 画像URLのリスト
-            'publish_date': article.publish_date,
-            'authors': article.authors
-        }
-        
-        status.update(label="完了！", state="complete")
-        return article_info
+    """記事を取得する"""
+    article = Article(url, language='ja')
+    article.download()
+    article.parse()
+    return {
+        'text': article.text,
+        'title': article.title,
+        'images': article.images
+    }
 
 def summarize_article(article_info):
     """記事を要約する"""
@@ -86,8 +80,29 @@ def summarize_article(article_info):
     
     return response.choices[0].message.content.strip()
 
+def combine_audio_files(teacher_file, student_file, output_file="output_combined.mp3"):
+    """音声ファイルを結合する"""
+    teacher_audio = AudioSegment.from_mp3(teacher_file)
+    student_audio = AudioSegment.from_mp3(student_file)
+    
+    # 音声を交互に配置
+    combined = AudioSegment.empty()
+    teacher_parts = teacher_audio.split_to_mono()[0]
+    student_parts = student_audio.split_to_mono()[0]
+    
+    # 0.5秒の無音を作成
+    silence = AudioSegment.silent(duration=500)
+    
+    # 音声を結合
+    combined = teacher_parts + silence + student_parts
+    
+    # 結合した音声を保存
+    combined.export(output_file, format="mp3")
+    return output_file
+
 def generate_script(article_info):
     start_time = time.time()
+    total_cost_usd = 0
     
     with st.status("台本を生成中...", expanded=True) as status:
         # ステップ1のステータス表示
@@ -105,7 +120,7 @@ def generate_script(article_info):
             "- 各発言の前に「A:」「B:」をつけて、誰の発言かを明確にする\n"
             "- 会話の間は「...」ではなく「、」や「。」を使って自然な間を表現\n"
             "- 記事内の画像についても詳しく説明してください\n"
-            "- 最後に「【まとめ】」というセクションを作り、記事の重要なポイントを3-5個の箇条書きでまとめる\n"
+            "- 最後に記事の重要なポイントをまとめて締めくくってください\n"
             "- BGMや効果音などの演出指示は含めない\n\n"
             "【記事タイトル】\n"
             f"{article_info['title']}\n\n"
@@ -117,10 +132,7 @@ def generate_script(article_info):
         # トークン数を計算
         input_tokens = count_tokens(prompt)
         input_cost_usd = format_cost_usd(input_tokens)
-        
-        st.sidebar.markdown("### 📊 使用状況")
-        st.sidebar.markdown(f"**入力トークン数:** {input_tokens:,}")
-        st.sidebar.markdown(f"**概算コスト:** {format_cost_jpy(input_cost_usd)}")
+        total_cost_usd += input_cost_usd
         
         progress_bar = st.progress(0)
         time_placeholder = st.empty()
@@ -146,57 +158,22 @@ def generate_script(article_info):
                 remaining_time = max(0, estimated_time - elapsed_time)
                 time_placeholder.text(f"残り時間: 約{int(remaining_time)}秒")
                 
-                # 生成中のトークン数を更新
-                output_tokens = count_tokens(generated_text)
-                output_cost_usd = format_cost_usd(output_tokens)
-                total_cost_usd = input_cost_usd + output_cost_usd
-                
-                st.sidebar.markdown(f"**出力トークン数:** {output_tokens:,}")
-                st.sidebar.markdown(f"**合計概算コスト:** {format_cost_jpy(total_cost_usd)}")
-                
                 status.update(label=f"台本を生成中... ({int(progress * 100)}%)")
         
         progress_bar.progress(1.0)
         time_placeholder.text("生成完了！")
+        
+        # 出力トークン数からコストを計算
+        output_tokens = count_tokens(generated_text)
+        output_cost_usd = format_cost_usd(output_tokens)
+        total_cost_usd += output_cost_usd
+        
         status.update(label="台本の生成が完了しました！", state="complete")
         
-        # 音声生成のコストを追加（$0.015/1K characters）
-        text_length = len(generated_text)
-        tts_cost_usd = (text_length * 0.015) / 1000
-        st.sidebar.markdown(f"**音声生成コスト:** {format_cost_jpy(tts_cost_usd)}")
-        
-        # 総コストを表示
-        total_all_cost_usd = total_cost_usd + tts_cost_usd
-        st.sidebar.markdown("---")
-        st.sidebar.markdown(f"**📈 総コスト: {format_cost_jpy(total_all_cost_usd)}**")
-        
-        return generated_text.strip()
+        return generated_text.strip(), total_cost_usd
 
-def split_script_by_speaker(script):
-    """台本をA（先生）とB（生徒）のパートに分割"""
-    lines = script.split('\n')
-    a_lines = []
-    b_lines = []
-    summary = []
-    is_summary = False
-    
-    for line in lines:
-        if line.startswith('【まとめ】'):
-            is_summary = True
-        elif is_summary:
-            summary.append(line)
-        elif line.startswith('A:'):
-            a_lines.append(line.replace('A:', '').strip())
-        elif line.startswith('B:'):
-            b_lines.append(line.replace('B:', '').strip())
-    
-    return {
-        'teacher': ' '.join(a_lines),
-        'student': ' '.join(b_lines),
-        'summary': '\n'.join(summary)
-    }
-
-def generate_tts(script, filename_prefix="output"):
+def generate_tts(script):
+    """音声を生成して結合する"""
     with st.status("音声を生成中...", expanded=True) as status:
         # 台本を話者ごとに分割
         parts = split_script_by_speaker(script)
@@ -216,21 +193,33 @@ def generate_tts(script, filename_prefix="output"):
             input=parts['student']
         )
         
-        # 音声ファイルを保存
-        teacher_file = f"{filename_prefix}_teacher.mp3"
-        student_file = f"{filename_prefix}_student.mp3"
+        # 一時ファイルとして保存
+        teacher_file = "temp_teacher.mp3"
+        student_file = "temp_student.mp3"
         
         with open(teacher_file, "wb") as f:
             f.write(teacher_response.content)
         with open(student_file, "wb") as f:
             f.write(student_response.content)
         
+        # 音声を結合
+        status.update(label="音声を結合中...")
+        combined_file = combine_audio_files(teacher_file, student_file)
+        
+        # 一時ファイルを削除
+        os.remove(teacher_file)
+        os.remove(student_file)
+        
+        # 音声生成のコストを計算（$0.015/1K characters）
+        total_chars = len(parts['teacher']) + len(parts['student'])
+        tts_cost_usd = (total_chars * 0.015) / 1000
+        
         status.update(label="音声の生成が完了しました！", state="complete")
-        return teacher_file, student_file, parts['summary']
+        return combined_file, tts_cost_usd
 
 st.title("記事URLからポッドキャスト風音声生成アプリ")
 
-# サイドバーに使用量の説明を追加
+# サイドバーに料金目安を表示
 with st.sidebar:
     st.markdown("### 💰 料金目安")
     rate = get_exchange_rate()
@@ -250,42 +239,24 @@ if st.button("台本生成＆音声化"):
     else:
         try:
             article_info = get_article_text(url)
-            script = generate_script(article_info)
-            st.markdown("### 📝 生成された台本")
-            st.text_area("", script, height=300)
+            script, text_cost_usd = generate_script(article_info)
+            st.text_area("生成された台本", script, height=300)
             
-            teacher_file, student_file, summary = generate_tts(script)
+            combined_file, tts_cost_usd = generate_tts(script)
             
-            st.markdown("### 🎙️ 生成された音声")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**先生役の音声**")
-                st.audio(teacher_file)
-            with col2:
-                st.markdown("**生徒役の音声**")
-                st.audio(student_file)
+            # 音声を再生
+            st.audio(combined_file)
             
-            # 画像を表示（最大2枚まで）
-            if article_info['images']:
-                st.markdown("### 🖼️ 参考画像")
-                cols = st.columns(min(2, len(article_info['images'])))
-                for i, (col, img_url) in enumerate(zip(cols, list(article_info['images'])[:2])):
-                    try:
-                        col.image(img_url, caption=f"画像 {i+1}", use_container_width=True)
-                    except Exception as e:
-                        col.warning(f"画像の読み込みに失敗しました")
+            # 音声ファイルのダウンロードボタン
+            with open(combined_file, "rb") as f:
+                st.download_button("音声をダウンロード", f, file_name="podcast.mp3", mime="audio/mp3")
             
-            st.markdown("### 📌 重要ポイントまとめ")
-            st.markdown(summary)
+            # 一時ファイルを削除
+            os.remove(combined_file)
             
-            st.markdown("### ⬇️ 音声ファイルのダウンロード")
-            col3, col4 = st.columns(2)
-            with col3:
-                with open(teacher_file, "rb") as f:
-                    st.download_button("先生役の音声をダウンロード", f, file_name="teacher.mp3", mime="audio/mp3")
-            with col4:
-                with open(student_file, "rb") as f:
-                    st.download_button("生徒役の音声をダウンロード", f, file_name="student.mp3", mime="audio/mp3")
+            # 総コストを表示
+            total_cost_usd = text_cost_usd + tts_cost_usd
+            st.success(f"処理が完了しました！ 総コスト: {format_cost_jpy(total_cost_usd)}")
             
         except Exception as e:
             st.error(f"エラーが発生しました: {str(e)}")
