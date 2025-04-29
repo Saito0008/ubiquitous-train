@@ -20,7 +20,7 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 HISTORY_FILE = "audio_history.json"
 
 # アプリケーションのバージョン
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 
 def load_history():
     """履歴をファイルから読み込む"""
