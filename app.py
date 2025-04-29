@@ -100,6 +100,23 @@ def combine_audio_files(teacher_file, student_file, output_file="output_combined
     combined.export(output_file, format="mp3")
     return output_file
 
+def split_script_by_speaker(script):
+    """台本をA（先生）とB（生徒）のパートに分割"""
+    lines = script.split('\n')
+    a_lines = []
+    b_lines = []
+    
+    for line in lines:
+        if line.startswith('A:'):
+            a_lines.append(line.replace('A:', '').strip())
+        elif line.startswith('B:'):
+            b_lines.append(line.replace('B:', '').strip())
+    
+    return {
+        'teacher': ' '.join(a_lines),
+        'student': ' '.join(b_lines)
+    }
+
 def generate_script(article_info):
     start_time = time.time()
     total_cost_usd = 0
