@@ -147,19 +147,22 @@ def generate_script(article_info):
     start_time = time.time()
     total_cost_usd = 0
     
-    # 全体の進捗を表示
-    progress_bar = st.progress(0)
-    time_placeholder = st.empty()
-    status_placeholder = st.empty()
+    # 進捗表示用のコンテナを作成
+    progress_container = st.container()
+    with progress_container:
+        st.markdown("### 処理の進捗状況")
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        time_text = st.empty()
     
-    # ステップ1のステータス表示
-    status_placeholder.markdown("### Step 1: 記事を要約中...")
+    # ステップ1: 記事の要約
+    status_text.markdown("**Step 1: 記事を要約中...**")
     summary = summarize_article(article_info)
     progress_bar.progress(0.2)
-    time_placeholder.text(f"残り時間: 約{int(60 - (time.time() - start_time))}秒")
+    time_text.text(f"残り時間: 約{int(60 - (time.time() - start_time))}秒")
     
-    # ステップ2のステータス表示
-    status_placeholder.markdown("### Step 2: 台本を生成中...")
+    # ステップ2: 台本の生成
+    status_text.markdown("**Step 2: 台本を生成中...**")
     prompt = (
         "以下の要約された記事内容を基に、テーマや結論がしっかり伝わるように、"
         "聞き手が理解しやすい長さ（最大20分、ベストな長さはお任せします）で、"
@@ -221,31 +224,33 @@ def generate_script(article_info):
             
             elapsed_time = time.time() - start_time
             remaining_time = max(0, estimated_time - elapsed_time)
-            time_placeholder.text(f"残り時間: 約{int(remaining_time)}秒")
+            time_text.text(f"残り時間: 約{int(remaining_time)}秒")
     
     progress_bar.progress(0.6)
-    time_placeholder.text("台本の生成が完了しました！")
+    time_text.text("台本の生成が完了しました！")
     
     # 出力トークン数からコストを計算
     output_tokens = count_tokens(generated_text)
     output_cost_usd = format_cost_usd(output_tokens)
     total_cost_usd += output_cost_usd
     
-    # ステップ3のステータス表示
-    status_placeholder.markdown("### Step 3: 音声を生成中...")
+    # ステップ3: 音声の生成
+    status_text.markdown("**Step 3: 音声を生成中...**")
     combined_file, tts_cost_usd = generate_tts(generated_text.strip())
     total_cost_usd += tts_cost_usd
     
     progress_bar.progress(1.0)
-    time_placeholder.text("処理が完了しました！")
-    status_placeholder.markdown("### ✅ 処理が完了しました！")
+    time_text.text("処理が完了しました！")
+    status_text.markdown("**✅ 処理が完了しました！**")
     
-    # 台本と音声を表示
-    st.markdown("### 📝 生成された台本")
-    st.text_area("", generated_text.strip(), height=300)
-    
-    st.markdown("### 🔊 生成された音声")
-    st.audio(combined_file)
+    # 結果表示用のコンテナを作成
+    result_container = st.container()
+    with result_container:
+        st.markdown("### 📝 生成された台本")
+        st.text_area("", generated_text.strip(), height=300)
+        
+        st.markdown("### 🔊 生成された音声")
+        st.audio(combined_file)
     
     return combined_file, total_cost_usd
 
