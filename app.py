@@ -5,7 +5,9 @@ import time
 import tiktoken
 import requests
 from datetime import datetime
-from audiosegment import AudioSegment
+import librosa
+import soundfile as sf
+import numpy as np
 import os
 
 # secretsからAPIキーを取得
@@ -83,17 +85,17 @@ def summarize_article(article_info):
 def combine_audio_files(teacher_file, student_file, output_file="output_combined.mp3"):
     """音声ファイルを結合する"""
     # 音声ファイルを読み込む
-    teacher_audio = AudioSegment.from_file(teacher_file)
-    student_audio = AudioSegment.from_file(student_file)
+    teacher_audio, sr = librosa.load(teacher_file, sr=None)
+    student_audio, _ = librosa.load(student_file, sr=sr)
     
     # 0.5秒の無音を作成
-    silence = AudioSegment.silent(duration_ms=500)
+    silence = np.zeros(int(0.5 * sr))
     
     # 音声を結合
-    combined = teacher_audio + silence + student_audio
+    combined = np.concatenate([teacher_audio, silence, student_audio])
     
     # 結合した音声を保存
-    combined.export(output_file, format="mp3")
+    sf.write(output_file, combined, sr)
     return output_file
 
 def split_script_by_speaker(script):
