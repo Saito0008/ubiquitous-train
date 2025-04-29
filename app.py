@@ -69,7 +69,7 @@ def summarize_article(article_info):
     
     prompt = (
         "以下の記事（本文と画像を含む）の内容を、重要なポイントを逃さないように要約してください。\n"
-        "特に画像の内容も含めて要約してください。\n\n"
+        "特に画像については、その意図や伝えたいメッセージを分析して要約してください。\n\n"
         "【記事内容】\n"
         f"{article_content}\n\n"
         "【要約】"
@@ -131,7 +131,7 @@ def generate_script(article_info):
     start_time = time.time()
     total_cost_usd = 0
     
-    with st.status("台本を生成中...", expanded=True) as status:
+    with st.status("記事を処理中...", expanded=True) as status:
         # ステップ1のステータス表示
         status.update(label="Step 1: 記事を要約中...")
         summary = summarize_article(article_info)
@@ -146,9 +146,28 @@ def generate_script(article_info):
             "- プロフェッショナルなホストA（先生役）と、初学者のホストB（生徒役）による対話形式\n"
             "- 各発言の前に「A:」「B:」をつけて、誰の発言かを明確にする\n"
             "- 会話の間は「...」ではなく「、」や「。」を使って自然な間を表現\n"
-            "- 記事内の画像についても詳しく説明してください\n"
             "- 最後に記事の重要なポイントをまとめて締めくくってください\n"
             "- BGMや効果音などの演出指示は含めない\n\n"
+            "【台本の内容について】\n"
+            "- 専門用語が出てきたら、必ず身近な例を使って説明してください\n"
+            "- 「なぜそうなるのか」という理由や背景を丁寧に説明してください\n"
+            "- 抽象的な概念は具体的な例を使って説明してください\n"
+            "- 重要なポイントは繰り返し説明してください\n"
+            "- 生徒役（B）は適度に質問や疑問を投げかけ、理解を深めるようにしてください\n"
+            "- 先生役（A）は生徒の理解度を確認しながら、必要に応じて補足説明をしてください\n\n"
+            "【日本語の表現について】\n"
+            "- 自然な日本語のイントネーションになるように、適切な句読点を使用してください\n"
+            "- 重要な部分は強調するように、文の構造を工夫してください\n"
+            "- 会話の流れを考慮して、適切な間を取るようにしてください\n"
+            "- 文末表現は「です・ます」調を基本とし、必要に応じて「だ・である」調も使用してください\n\n"
+            "【画像の扱いについて】\n"
+            "- 画像の内容を単に説明するのではなく、その意図や伝えたいメッセージを会話の中で自然に伝えてください\n"
+            "- 例えば、象とりんごの大きさを比較する画像がある場合、\n"
+            "  ×「象とりんごの画像があります」\n"
+            "  ○「りんごは象と比較すると何倍も小さいです」\n"
+            "  のように、画像の意図を会話の中で自然に説明してください\n"
+            "- 画像の視覚的な要素（色、形、配置など）が重要な場合は、その効果や意図を説明してください\n"
+            "- 複数の画像がある場合は、それらの関連性やストーリー性を活かして説明してください\n\n"
             "【記事タイトル】\n"
             f"{article_info['title']}\n\n"
             "【要約された内容】\n"
@@ -188,80 +207,124 @@ def generate_script(article_info):
                 status.update(label=f"台本を生成中... ({int(progress * 100)}%)")
         
         progress_bar.progress(1.0)
-        time_placeholder.text("生成完了！")
+        time_placeholder.text("台本の生成が完了しました！")
         
         # 出力トークン数からコストを計算
         output_tokens = count_tokens(generated_text)
         output_cost_usd = format_cost_usd(output_tokens)
         total_cost_usd += output_cost_usd
         
-        status.update(label="台本の生成が完了しました！", state="complete")
+        # 台本を表示
+        st.text_area("生成された台本", generated_text.strip(), height=300)
         
-        return generated_text.strip(), total_cost_usd
+        # 音声生成に進む
+        status.update(label="Step 3: 音声を生成中...")
+        combined_file, tts_cost_usd = generate_tts(generated_text.strip())
+        total_cost_usd += tts_cost_usd
+        
+        status.update(label="処理が完了しました！", state="complete")
+        return combined_file, total_cost_usd
+
+# 音声の種類を定義
+VOICE_OPTIONS = {
+    "男性の声": {
+        "alloy": "標準的な男性の声",
+        "echo": "落ち着いた男性の声",
+        "fable": "若々しい男性の声"
+    },
+    "女性の声": {
+        "nova": "標準的な女性の声",
+        "shimmer": "落ち着いた女性の声",
+        "onyx": "力強い女性の声"
+    }
+}
 
 def generate_tts(script):
     """音声を生成して結合する"""
-    with st.status("音声を生成中...", expanded=True) as status:
-        # 台本をセリフごとに分割
-        dialogues = split_script_by_speaker(script)
-        total_dialogues = len(dialogues)
+    # 台本をセリフごとに分割
+    dialogues = split_script_by_speaker(script)
+    total_dialogues = len(dialogues)
+    
+    # 進捗表示の設定
+    progress_bar = st.progress(0)
+    time_placeholder = st.empty()
+    
+    # 各セリフの音声を生成して結合
+    combined_audio = None
+    sr = None
+    
+    for i, dialogue in enumerate(dialogues):
+        # 進捗表示の更新
+        progress = (i + 1) / total_dialogues
+        progress_bar.progress(progress)
+        time_placeholder.text(f"セリフ {i+1}/{total_dialogues} を生成中...")
         
-        # 進捗表示の設定
-        progress_bar = st.progress(0)
-        time_placeholder = st.empty()
+        # テキストをSSML形式に変換
+        ssml_text = convert_to_ssml(dialogue['text'])
         
-        # 各セリフの音声を生成して結合
-        combined_audio = None
-        sr = None
+        # 音声を生成
+        response = client.audio.speech.create(
+            model="tts-1",
+            voice=st.session_state.teacher_voice if dialogue['speaker'] == 'teacher' else st.session_state.student_voice,
+            input=ssml_text,
+            response_format="mp3"
+        )
         
-        for i, dialogue in enumerate(dialogues):
-            # 進捗表示の更新
-            progress = (i + 1) / total_dialogues
-            progress_bar.progress(progress)
-            time_placeholder.text(f"セリフ {i+1}/{total_dialogues} を生成中...")
-            
-            # 音声を生成
-            response = client.audio.speech.create(
-                model="tts-1",
-                voice="alloy" if dialogue['speaker'] == 'teacher' else "nova",
-                input=dialogue['text']
-            )
-            
-            # 一時ファイルとして保存
-            temp_file = f"temp_{dialogue['speaker']}_{i}.mp3"
-            with open(temp_file, "wb") as f:
-                f.write(response.content)
-            
-            # 音声を読み込む
-            audio, current_sr = librosa.load(temp_file, sr=None)
-            if sr is None:
-                sr = current_sr
-            
-            # 音声を正規化
-            audio = librosa.util.normalize(audio)
-            
-            # 音声を結合
-            if combined_audio is None:
-                combined_audio = audio
-            else:
-                # 0.5秒の無音を追加
-                silence = np.zeros(int(0.5 * sr))
-                combined_audio = np.concatenate([combined_audio, silence, audio])
-            
-            # 一時ファイルを削除
-            os.remove(temp_file)
+        # 一時ファイルとして保存
+        temp_file = f"temp_{dialogue['speaker']}_{i}.mp3"
+        with open(temp_file, "wb") as f:
+            f.write(response.content)
         
-        # 結合した音声を保存
-        output_file = "output_combined.mp3"
-        combined_audio = librosa.util.normalize(combined_audio)
-        sf.write(output_file, combined_audio, sr)
+        # 音声を読み込む
+        audio, current_sr = librosa.load(temp_file, sr=None)
+        if sr is None:
+            sr = current_sr
         
-        # 音声生成のコストを計算（$0.015/1K characters）
-        total_chars = sum(len(d['text']) for d in dialogues)
-        tts_cost_usd = (total_chars * 0.015) / 1000
+        # 音声を正規化
+        audio = librosa.util.normalize(audio)
         
-        status.update(label="音声の生成が完了しました！", state="complete")
-        return output_file, tts_cost_usd
+        # 音声を結合
+        if combined_audio is None:
+            combined_audio = audio
+        else:
+            # 0.5秒の無音を追加
+            silence = np.zeros(int(0.5 * sr))
+            combined_audio = np.concatenate([combined_audio, silence, audio])
+        
+        # 一時ファイルを削除
+        os.remove(temp_file)
+    
+    # 結合した音声を保存
+    output_file = "output_combined.mp3"
+    combined_audio = librosa.util.normalize(combined_audio)
+    sf.write(output_file, combined_audio, sr)
+    
+    # 音声生成のコストを計算（$0.015/1K characters）
+    total_chars = sum(len(d['text']) for d in dialogues)
+    tts_cost_usd = (total_chars * 0.015) / 1000
+    
+    return output_file, tts_cost_usd
+
+def convert_to_ssml(text):
+    """テキストをSSML形式に変換する"""
+    # 基本的なSSMLタグを追加
+    ssml = f"""<speak>
+    <prosody rate="1.0" pitch="0.0">
+        {text}
+    </prosody>
+    </speak>"""
+    
+    # 句読点の後に間を追加
+    ssml = ssml.replace("。", "。<break time=\"0.5s\"/>")
+    ssml = ssml.replace("、", "、<break time=\"0.3s\"/>")
+    ssml = ssml.replace("？", "？<break time=\"0.5s\"/>")
+    ssml = ssml.replace("！", "！<break time=\"0.5s\"/>")
+    
+    # 文節の区切りを追加
+    ssml = ssml.replace("「", "<break time=\"0.2s\"/>「")
+    ssml = ssml.replace("」", "」<break time=\"0.2s\"/>")
+    
+    return ssml
 
 # 音声履歴を保持するセッションステート
 if 'audio_history' not in st.session_state:
@@ -269,15 +332,50 @@ if 'audio_history' not in st.session_state:
 
 st.title("記事URLからポッドキャスト風音声生成アプリ")
 
-# サイドバーに料金目安を表示
+# サイドバーに音声選択を追加
 with st.sidebar:
+    st.markdown("### 🎤 音声設定")
+    
+    # 先生役の音声選択
+    st.markdown("#### 先生役の音声")
+    teacher_voice = st.selectbox(
+        "先生役の音声を選択",
+        options=list(VOICE_OPTIONS["男性の声"].keys()),
+        format_func=lambda x: f"{x} - {VOICE_OPTIONS['男性の声'][x]}",
+        key="teacher_voice"
+    )
+    
+    # 生徒役の音声選択
+    st.markdown("#### 生徒役の音声")
+    student_voice = st.selectbox(
+        "生徒役の音声を選択",
+        options=list(VOICE_OPTIONS["女性の声"].keys()),
+        format_func=lambda x: f"{x} - {VOICE_OPTIONS['女性の声'][x]}",
+        key="student_voice"
+    )
+    
+    st.markdown("---")
+    
+    # 料金目安の表示
     st.markdown("### 💰 料金目安")
     rate = get_exchange_rate()
     st.markdown(f"**現在の為替レート: $1 = ¥{rate:.2f}**")
+    
     st.markdown("""
-    - GPT-4入力: ¥4.35/1K tokens
-    - GPT-4出力: ¥8.70/1K tokens
-    - 音声生成: ¥2.18/1K文字
+    #### 1記事あたりの目安料金
+    - **短い記事（約1000文字）**: ¥50〜¥100
+    - **中程度の記事（約3000文字）**: ¥100〜¥200
+    - **長い記事（約5000文字）**: ¥200〜¥300
+    
+    #### 内訳
+    - **GPT-4入力**: ¥4.35/1K tokens
+    - **GPT-4出力**: ¥8.70/1K tokens
+    - **音声生成**: ¥2.18/1K文字
+    
+    #### 注意事項
+    - 料金は記事の長さや内容によって変動します
+    - 画像が多い記事は処理に時間がかかり、料金が高くなる可能性があります
+    - 音声の長さによっても料金が変動します
     """)
     st.markdown("---")
 
@@ -290,28 +388,25 @@ if st.button("台本生成＆音声化"):
         try:
             article_info = get_article_text(url)
             script, text_cost_usd = generate_script(article_info)
-            st.text_area("生成された台本", script, height=300)
-            
-            combined_file, tts_cost_usd = generate_tts(script)
             
             # 音声を再生
-            st.audio(combined_file)
+            st.audio(script)
             
             # 音声ファイルのダウンロードボタン
-            with open(combined_file, "rb") as f:
+            with open(script, "rb") as f:
                 st.download_button("音声をダウンロード", f, file_name="podcast.mp3", mime="audio/mp3")
             
             # 音声履歴に追加
             history_item = {
                 'id': str(uuid.uuid4()),
                 'title': article_info['title'],
-                'file': combined_file,
+                'file': script,
                 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
             st.session_state.audio_history.append(history_item)
             
             # 総コストを表示
-            total_cost_usd = text_cost_usd + tts_cost_usd
+            total_cost_usd = text_cost_usd
             st.success(f"処理が完了しました！ 総コスト: {format_cost_jpy(total_cost_usd)}")
             
         except Exception as e:
