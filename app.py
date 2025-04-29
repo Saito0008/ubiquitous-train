@@ -20,7 +20,7 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 HISTORY_FILE = "audio_history.json"
 
 # アプリケーションのバージョン
-APP_VERSION = "1.0.4"
+APP_VERSION = "1.1.0"
 
 def load_history():
     """履歴をファイルから読み込む"""
@@ -147,7 +147,7 @@ def split_script_by_speaker(script):
     return dialogues
 
 def convert_to_ssml(text):
-    """テキストをSSML形式に変換する"""
+    """テキストを音声生成用に変換する"""
     # テキストを文単位に分割
     sentences = []
     current_sentence = ""
@@ -161,7 +161,7 @@ def convert_to_ssml(text):
     if current_sentence:
         sentences.append(current_sentence.strip())
     
-    # 各文にSSMLタグを追加
+    # 各文に間を設定
     processed_sentences = []
     for sentence in sentences:
         # 文節の区切りを処理
@@ -190,32 +190,21 @@ def convert_to_ssml(text):
         processed_parts = []
         for i, part in enumerate(parts):
             if part.startswith("「"):
-                processed_parts.append(f"<break strength='medium'/>{part}")
+                processed_parts.append(f"、{part}")
             elif part.endswith("」"):
-                processed_parts.append(f"{part}<break strength='medium'/>")
+                processed_parts.append(f"{part}、")
             else:
                 # 句読点の処理
-                part = part.replace("、", "、<break strength='x-weak'/>")
+                part = part.replace("、", "、")
                 processed_parts.append(part)
         
         processed_sentence = "".join(processed_parts)
         processed_sentences.append(processed_sentence)
     
     # 文を結合
-    processed_text = "<break strength='strong'/>".join(processed_sentences)
+    processed_text = "。".join(processed_sentences) + "。"
     
-    # 最終的なSSMLを構築
-    ssml = f"""<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="ja-JP">
-    <prosody rate="1.0">
-        {processed_text}
-    </prosody>
-    </speak>"""
-    
-    # 余分な空白を削除
-    ssml = ssml.replace("  ", " ")
-    ssml = ssml.replace("\n", " ")
-    
-    return ssml
+    return processed_text
 
 def generate_tts(script):
     """音声を生成して結合する"""
