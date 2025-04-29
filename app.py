@@ -255,6 +255,27 @@ VOICE_OPTIONS = {
     }
 }
 
+def convert_to_ssml(text):
+    """テキストをSSML形式に変換する"""
+    # 基本的なSSMLタグを追加
+    ssml = f"""<speak>
+    <prosody rate="1.0" pitch="0.0">
+        {text}
+    </prosody>
+    </speak>"""
+    
+    # 句読点の後に間を追加（タグを正しく処理）
+    ssml = ssml.replace("。", "。<break time='0.5s'/>")
+    ssml = ssml.replace("、", "、<break time='0.3s'/>")
+    ssml = ssml.replace("？", "？<break time='0.5s'/>")
+    ssml = ssml.replace("！", "！<break time='0.5s'/>")
+    
+    # 文節の区切りを追加（タグを正しく処理）
+    ssml = ssml.replace("「", "<break time='0.2s'/>「")
+    ssml = ssml.replace("」", "」<break time='0.2s'/>")
+    
+    return ssml
+
 def generate_tts(script):
     """音声を生成して結合する"""
     # 台本をセリフごとに分割
@@ -320,27 +341,6 @@ def generate_tts(script):
     tts_cost_usd = (total_chars * 0.015) / 1000
     
     return output_file, tts_cost_usd
-
-def convert_to_ssml(text):
-    """テキストをSSML形式に変換する"""
-    # 基本的なSSMLタグを追加
-    ssml = f"""<speak>
-    <prosody rate="1.0" pitch="0.0">
-        {text}
-    </prosody>
-    </speak>"""
-    
-    # 句読点の後に間を追加
-    ssml = ssml.replace("。", "。<break time=\"0.5s\"/>")
-    ssml = ssml.replace("、", "、<break time=\"0.3s\"/>")
-    ssml = ssml.replace("？", "？<break time=\"0.5s\"/>")
-    ssml = ssml.replace("！", "！<break time=\"0.5s\"/>")
-    
-    # 文節の区切りを追加
-    ssml = ssml.replace("「", "<break time=\"0.2s\"/>「")
-    ssml = ssml.replace("」", "」<break time=\"0.2s\"/>")
-    
-    return ssml
 
 # 音声履歴を初期化
 if 'audio_history' not in st.session_state:
