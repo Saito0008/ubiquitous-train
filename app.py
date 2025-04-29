@@ -5,7 +5,7 @@ import time
 import tiktoken
 import requests
 from datetime import datetime
-from pydub import AudioSegment
+from audiosegment import AudioSegment
 import os
 
 # secretsからAPIキーを取得
@@ -82,19 +82,15 @@ def summarize_article(article_info):
 
 def combine_audio_files(teacher_file, student_file, output_file="output_combined.mp3"):
     """音声ファイルを結合する"""
-    teacher_audio = AudioSegment.from_mp3(teacher_file)
-    student_audio = AudioSegment.from_mp3(student_file)
-    
-    # 音声を交互に配置
-    combined = AudioSegment.empty()
-    teacher_parts = teacher_audio.split_to_mono()[0]
-    student_parts = student_audio.split_to_mono()[0]
+    # 音声ファイルを読み込む
+    teacher_audio = AudioSegment.from_file(teacher_file)
+    student_audio = AudioSegment.from_file(student_file)
     
     # 0.5秒の無音を作成
-    silence = AudioSegment.silent(duration=500)
+    silence = AudioSegment.silent(duration_ms=500)
     
     # 音声を結合
-    combined = teacher_parts + silence + student_parts
+    combined = teacher_audio + silence + student_audio
     
     # 結合した音声を保存
     combined.export(output_file, format="mp3")
