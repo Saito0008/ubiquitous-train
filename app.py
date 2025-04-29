@@ -3,17 +3,36 @@ from newspaper import Article
 import openai
 import time
 import tiktoken
+import requests
+from datetime import datetime
 
 # secretsからAPIキーを取得
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
+
+@st.cache_data(ttl=3600)  # 1時間キャッシュ
+def get_exchange_rate() -> float:
+    """USD/JPYの為替レートを取得"""
+    try:
+        response = requests.get("https://api.exchangerate-api.com/v4/latest/USD")
+        data = response.json()
+        return data["rates"]["JPY"]
+    except Exception as e:
+        st.warning("為替レートの取得に失敗しました。固定レート(145円)を使用します。")
+        return 145.0
 
 def count_tokens(text: str) -> int:
     """テキストのトークン数を計算"""
     encoding = tiktoken.encoding_for_model("gpt-4")
     return len(encoding.encode(text))
 
-def format_cost(tokens: int) -> float:
+def format_cost_jpy(usd_cost: float) -> str:
+    """USDのコストを日本円に変換"""
+    rate = get_exchange_rate()
+    jpy_cost = usd_cost * rate
+    return f"¥{jpy_cost:,.0f}"
+
+def format_cost_usd(tokens: int) -> float:
     """トークン数から概算コストを計算（USD）"""
     # GPT-4の料金: $0.03/1K tokens (input), $0.06/1K tokens (output)
     return (tokens * 0.03) / 1000
@@ -48,9 +67,11 @@ def generate_script(text):
         
         # トークン数を計算
         input_tokens = count_tokens(prompt)
+        input_cost_usd = format_cost_usd(input_tokens)
+        
         st.sidebar.markdown("### 📊 使用状況")
         st.sidebar.markdown(f"**入力トークン数:** {input_tokens:,}")
-        st.sidebar.markdown(f"**概算コスト:** ${format_cost(input_tokens):.4f}")
+        st.sidebar.markdown(f"**概算コスト:** {format_cost_jpy(input_cost_usd)}")
         
         progress_bar = st.progress(0)
         time_placeholder = st.empty()
@@ -77,8 +98,11 @@ def generate_script(text):
                 
                 # 生成中のトークン数を更新
                 output_tokens = count_tokens(generated_text)
+                output_cost_usd = format_cost_usd(output_tokens)
+                total_cost_usd = input_cost_usd + output_cost_usd
+                
                 st.sidebar.markdown(f"**出力トークン数:** {output_tokens:,}")
-                st.sidebar.markdown(f"**合計概算コスト:** ${(format_cost(input_tokens) + format_cost(output_tokens)):.4f}")
+                st.sidebar.markdown(f"**合計概算コスト:** {format_cost_jpy(total_cost_usd)}")
                 
                 status.update(label=f"台本を生成中... ({int(progress * 100)}%)")
         
@@ -88,8 +112,13 @@ def generate_script(text):
         
         # 音声生成のコストを追加（$0.015/1K characters）
         text_length = len(generated_text)
-        tts_cost = (text_length * 0.015) / 1000
-        st.sidebar.markdown(f"**音声生成コスト:** ${tts_cost:.4f}")
+        tts_cost_usd = (text_length * 0.015) / 1000
+        st.sidebar.markdown(f"**音声生成コスト:** {format_cost_jpy(tts_cost_usd)}")
+        
+        # 総コストを表示
+        total_all_cost_usd = total_cost_usd + tts_cost_usd
+        st.sidebar.markdown("---")
+        st.sidebar.markdown(f"**📈 総コスト: {format_cost_jpy(total_all_cost_usd)}**")
         
         return generated_text.strip()
 
@@ -154,10 +183,12 @@ st.title("記事URLからポッドキャスト風音声生成アプリ")
 # サイドバーに使用量の説明を追加
 with st.sidebar:
     st.markdown("### 💰 料金目安")
+    rate = get_exchange_rate()
+    st.markdown(f"**現在の為替レート: $1 = ¥{rate:.2f}**")
     st.markdown("""
-    - GPT-4入力: $0.03/1K tokens
-    - GPT-4出力: $0.06/1K tokens
-    - 音声生成: $0.015/1K文字
+    - GPT-4入力: ¥4.35/1K tokens
+    - GPT-4出力: ¥8.70/1K tokens
+    - 音声生成: ¥2.18/1K文字
     """)
     st.markdown("---")
 
