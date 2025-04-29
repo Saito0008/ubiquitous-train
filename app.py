@@ -10,10 +10,26 @@ import soundfile as sf
 import numpy as np
 import os
 import uuid
+import json
 
 # secretsからAPIキーを取得
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
+
+# 履歴ファイルのパス
+HISTORY_FILE = "audio_history.json"
+
+def load_history():
+    """履歴をファイルから読み込む"""
+    if os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+def save_history(history):
+    """履歴をファイルに保存する"""
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
 
 @st.cache_data(ttl=3600)  # 1時間キャッシュ
 def get_exchange_rate() -> float:
@@ -326,9 +342,9 @@ def convert_to_ssml(text):
     
     return ssml
 
-# 音声履歴を保持するセッションステート
+# 音声履歴を初期化
 if 'audio_history' not in st.session_state:
-    st.session_state.audio_history = []
+    st.session_state.audio_history = load_history()
 
 st.title("記事URLからポッドキャスト風音声生成アプリ")
 
@@ -378,6 +394,27 @@ with st.sidebar:
     - 音声の長さによっても料金が変動します
     """)
     st.markdown("---")
+    
+    # 履歴リストの表示
+    if st.session_state.audio_history:
+        st.markdown("### 📚 生成履歴")
+        for item in reversed(st.session_state.audio_history):
+            with st.expander(f"{item['title']} - {item['timestamp']}"):
+                st.audio(item['file'])
+                with open(item['file'], "rb") as f:
+                    st.download_button(
+                        "音声をダウンロード",
+                        f,
+                        file_name=f"podcast_{item['timestamp']}.mp3",
+                        mime="audio/mp3",
+                        key=f"dl_{item['id']}"
+                    )
+                
+                # 履歴から削除するボタン
+                if st.button("この履歴を削除", key=f"delete_{item['id']}"):
+                    st.session_state.audio_history = [h for h in st.session_state.audio_history if h['id'] != item['id']]
+                    save_history(st.session_state.audio_history)
+                    st.rerun()
 
 url = st.text_input("記事のURLを入力してください")
 
@@ -405,24 +442,12 @@ if st.button("台本生成＆音声化"):
             }
             st.session_state.audio_history.append(history_item)
             
+            # 履歴をファイルに保存
+            save_history(st.session_state.audio_history)
+            
             # 総コストを表示
             total_cost_usd = text_cost_usd
             st.success(f"処理が完了しました！ 総コスト: {format_cost_jpy(total_cost_usd)}")
             
         except Exception as e:
             st.error(f"エラーが発生しました: {str(e)}")
-
-# 音声履歴を表示
-if st.session_state.audio_history:
-    st.markdown("### 📚 生成履歴")
-    for item in reversed(st.session_state.audio_history):
-        with st.expander(f"{item['title']} - {item['timestamp']}"):
-            st.audio(item['file'])
-            with open(item['file'], "rb") as f:
-                st.download_button(
-                    "音声をダウンロード",
-                    f,
-                    file_name=f"podcast_{item['timestamp']}.mp3",
-                    mime="audio/mp3",
-                    key=f"dl_{item['id']}"
-                )
