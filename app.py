@@ -19,6 +19,9 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 # 履歴ファイルのパス
 HISTORY_FILE = "audio_history.json"
 
+# アプリケーションのバージョン
+APP_VERSION = "1.0.0"
+
 def load_history():
     """履歴をファイルから読み込む"""
     if os.path.exists(HISTORY_FILE):
@@ -327,6 +330,7 @@ if 'audio_history' not in st.session_state:
     st.session_state.audio_history = load_history()
 
 st.title("記事URLからポッドキャスト風音声生成アプリ")
+st.markdown(f"**バージョン: {APP_VERSION}**")
 
 # サイドバーに音声選択を追加
 with st.sidebar:
