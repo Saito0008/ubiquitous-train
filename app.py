@@ -20,7 +20,7 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 HISTORY_FILE = "audio_history.json"
 
 # アプリケーションのバージョン
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 
 def load_history():
     """履歴をファイルから読み込む"""
@@ -165,13 +165,41 @@ def convert_to_ssml(text):
     processed_sentences = []
     for sentence in sentences:
         # 文節の区切りを処理
-        sentence = sentence.replace("「", "<break time='200ms'/>「")
-        sentence = sentence.replace("」", "」<break time='200ms'/>")
+        parts = []
+        current_part = ""
+        in_quote = False
         
-        # 句読点の処理
-        sentence = sentence.replace("、", "、<break time='300ms'/>")
+        for char in sentence:
+            if char == "「":
+                if current_part:
+                    parts.append(current_part)
+                current_part = "「"
+                in_quote = True
+            elif char == "」" and in_quote:
+                current_part += "」"
+                parts.append(current_part)
+                current_part = ""
+                in_quote = False
+            else:
+                current_part += char
         
-        processed_sentences.append(sentence)
+        if current_part:
+            parts.append(current_part)
+        
+        # 各部分に適切な間を設定
+        processed_parts = []
+        for i, part in enumerate(parts):
+            if part.startswith("「"):
+                processed_parts.append(f"<break time='200ms'/>{part}")
+            elif part.endswith("」"):
+                processed_parts.append(f"{part}<break time='200ms'/>")
+            else:
+                # 句読点の処理
+                part = part.replace("、", "、<break time='300ms'/>")
+                processed_parts.append(part)
+        
+        processed_sentence = "".join(processed_parts)
+        processed_sentences.append(processed_sentence)
     
     # 文を結合
     processed_text = "<break time='500ms'/>".join(processed_sentences)
