@@ -102,11 +102,6 @@ def combine_audio_files(teacher_file, student_file, output_file="output_combined
         combined = librosa.util.normalize(combined)
         sf.write(output_file, combined, sr)
         
-        # 結合した音声を確認
-        st.audio(teacher_file, format="audio/mp3")
-        st.audio(student_file, format="audio/mp3")
-        st.audio(output_file, format="audio/mp3")
-        
         return output_file
     except Exception as e:
         st.error(f"音声の結合中にエラーが発生しました: {str(e)}")
@@ -115,26 +110,22 @@ def combine_audio_files(teacher_file, student_file, output_file="output_combined
 def split_script_by_speaker(script):
     """台本をA（先生）とB（生徒）のパートに分割"""
     lines = script.split('\n')
-    a_lines = []
-    b_lines = []
+    dialogues = []
     
     for line in lines:
         line = line.strip()
         if line.startswith('A:'):
-            a_lines.append(line.replace('A:', '').strip())
+            dialogues.append({
+                'speaker': 'teacher',
+                'text': line.replace('A:', '').strip()
+            })
         elif line.startswith('B:'):
-            b_lines.append(line.replace('B:', '').strip())
+            dialogues.append({
+                'speaker': 'student',
+                'text': line.replace('B:', '').strip()
+            })
     
-    # デバッグ情報を表示
-    st.write("先生役のセリフ数:", len(a_lines))
-    st.write("生徒役のセリフ数:", len(b_lines))
-    st.write("先生役のセリフ:", a_lines)
-    st.write("生徒役のセリフ:", b_lines)
-    
-    return {
-        'teacher': ' '.join(a_lines),
-        'student': ' '.join(b_lines)
-    }
+    return dialogues
 
 def generate_script(article_info):
     start_time = time.time()
@@ -211,57 +202,66 @@ def generate_script(article_info):
 def generate_tts(script):
     """音声を生成して結合する"""
     with st.status("音声を生成中...", expanded=True) as status:
-        # 台本を話者ごとに分割
-        parts = split_script_by_speaker(script)
+        # 台本をセリフごとに分割
+        dialogues = split_script_by_speaker(script)
+        total_dialogues = len(dialogues)
         
-        # 先生役（Alloy）の音声を生成
-        status.update(label="先生役の音声を生成中...")
+        # 進捗表示の設定
         progress_bar = st.progress(0)
         time_placeholder = st.empty()
         
-        teacher_response = client.audio.speech.create(
-            model="tts-1",
-            voice="alloy",  # プロフェッショナルな声
-            input=parts['teacher']
-        )
+        # 各セリフの音声を生成して結合
+        combined_audio = None
+        sr = None
         
-        progress_bar.progress(0.5)
-        time_placeholder.text("先生役の音声生成完了！")
+        for i, dialogue in enumerate(dialogues):
+            # 進捗表示の更新
+            progress = (i + 1) / total_dialogues
+            progress_bar.progress(progress)
+            time_placeholder.text(f"セリフ {i+1}/{total_dialogues} を生成中...")
+            
+            # 音声を生成
+            response = client.audio.speech.create(
+                model="tts-1",
+                voice="alloy" if dialogue['speaker'] == 'teacher' else "nova",
+                input=dialogue['text']
+            )
+            
+            # 一時ファイルとして保存
+            temp_file = f"temp_{dialogue['speaker']}_{i}.mp3"
+            with open(temp_file, "wb") as f:
+                f.write(response.content)
+            
+            # 音声を読み込む
+            audio, current_sr = librosa.load(temp_file, sr=None)
+            if sr is None:
+                sr = current_sr
+            
+            # 音声を正規化
+            audio = librosa.util.normalize(audio)
+            
+            # 音声を結合
+            if combined_audio is None:
+                combined_audio = audio
+            else:
+                # 0.5秒の無音を追加
+                silence = np.zeros(int(0.5 * sr))
+                combined_audio = np.concatenate([combined_audio, silence, audio])
+            
+            # 一時ファイルを削除
+            os.remove(temp_file)
         
-        # 生徒役（Nova）の音声を生成
-        status.update(label="生徒役の音声を生成中...")
-        student_response = client.audio.speech.create(
-            model="tts-1",
-            voice="nova",  # フレンドリーな声
-            input=parts['student']
-        )
-        
-        progress_bar.progress(1.0)
-        time_placeholder.text("生徒役の音声生成完了！")
-        
-        # 一時ファイルとして保存
-        teacher_file = "temp_teacher.mp3"
-        student_file = "temp_student.mp3"
-        
-        with open(teacher_file, "wb") as f:
-            f.write(teacher_response.content)
-        with open(student_file, "wb") as f:
-            f.write(student_response.content)
-        
-        # 音声を結合
-        status.update(label="音声を結合中...")
-        combined_file = combine_audio_files(teacher_file, student_file)
-        
-        # 一時ファイルを削除
-        os.remove(teacher_file)
-        os.remove(student_file)
+        # 結合した音声を保存
+        output_file = "output_combined.mp3"
+        combined_audio = librosa.util.normalize(combined_audio)
+        sf.write(output_file, combined_audio, sr)
         
         # 音声生成のコストを計算（$0.015/1K characters）
-        total_chars = len(parts['teacher']) + len(parts['student'])
+        total_chars = sum(len(d['text']) for d in dialogues)
         tts_cost_usd = (total_chars * 0.015) / 1000
         
         status.update(label="音声の生成が完了しました！", state="complete")
-        return combined_file, tts_cost_usd
+        return output_file, tts_cost_usd
 
 # 音声履歴を保持するセッションステート
 if 'audio_history' not in st.session_state:
