@@ -147,42 +147,18 @@ def generate_script(article_info):
     start_time = time.time()
     total_cost_usd = 0
     
-    # 各ステップの進捗表示を初期化
+    # シンプルな進捗表示
     st.markdown("### 処理の進捗状況")
-    
-    # ステップ1の進捗表示
-    step1_container = st.container()
-    with step1_container:
-        st.markdown("**Step 1: 記事の要約**")
-        step1_progress = st.progress(0)
-        step1_status = st.empty()
-        step1_time = st.empty()
-    
-    # ステップ2の進捗表示
-    step2_container = st.container()
-    with step2_container:
-        st.markdown("**Step 2: 台本の生成**")
-        step2_progress = st.progress(0)
-        step2_status = st.empty()
-        step2_time = st.empty()
-    
-    # ステップ3の進捗表示
-    step3_container = st.container()
-    with step3_container:
-        st.markdown("**Step 3: 音声の生成**")
-        step3_progress = st.progress(0)
-        step3_status = st.empty()
-        step3_time = st.empty()
+    status_text = st.empty()
+    progress_bar = st.progress(0)
     
     # ステップ1: 記事の要約
-    step1_status.markdown("処理中...")
+    status_text.markdown("**記事を要約中...**")
     summary = summarize_article(article_info)
-    step1_progress.progress(1.0)
-    step1_status.markdown("✅ 完了")
-    step1_time.text("")
+    progress_bar.progress(0.2)
     
     # ステップ2: 台本の生成
-    step2_status.markdown("処理中...")
+    status_text.markdown("**台本を生成中...**")
     prompt = (
         "以下の要約された記事内容を基に、テーマや結論がしっかり伝わるように、"
         "聞き手が理解しやすい長さ（最大20分、ベストな長さはお任せします）で、"
@@ -239,16 +215,10 @@ def generate_script(article_info):
     for chunk in response:
         if chunk.choices[0].delta.content:
             generated_text += chunk.choices[0].delta.content
-            progress = min(1.0, (time.time() - start_time) / estimated_time)
-            step2_progress.progress(progress)
-            
-            elapsed_time = time.time() - start_time
-            remaining_time = max(0, estimated_time - elapsed_time)
-            step2_time.text(f"残り時間: 約{int(remaining_time)}秒")
+            progress = min(0.6, 0.2 + (time.time() - start_time) / estimated_time)
+            progress_bar.progress(progress)
     
-    step2_progress.progress(1.0)
-    step2_status.markdown("✅ 完了")
-    step2_time.text("")
+    progress_bar.progress(0.6)
     
     # 出力トークン数からコストを計算
     output_tokens = count_tokens(generated_text)
@@ -256,13 +226,12 @@ def generate_script(article_info):
     total_cost_usd += output_cost_usd
     
     # ステップ3: 音声の生成
-    step3_status.markdown("処理中...")
+    status_text.markdown("**音声を生成中...**")
     combined_file, tts_cost_usd = generate_tts(generated_text.strip())
     total_cost_usd += tts_cost_usd
     
-    step3_progress.progress(1.0)
-    step3_status.markdown("✅ 完了")
-    step3_time.text("")
+    progress_bar.progress(1.0)
+    status_text.markdown("**✅ 処理が完了しました！**")
     
     # 結果表示
     st.markdown("### 📝 生成された台本")
@@ -324,7 +293,7 @@ def generate_tts(script):
     
     for i, dialogue in enumerate(dialogues):
         # 進捗表示の更新
-        progress = (i + 1) / total_dialogues
+        progress = 0.6 + (i + 1) / total_dialogues * 0.4
         st.progress(progress)
         
         # テキストをSSML形式に変換
