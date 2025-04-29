@@ -56,11 +56,9 @@ def get_article_text(url):
         status.update(label="完了！", state="complete")
         return article_info
 
-def generate_script(article_info):
-    start_time = time.time()
-    estimated_time = len(article_info['text']) * 0.1
-    
-    with st.status("台本を生成中...", expanded=True) as status:
+def summarize_article(article_info):
+    """記事を要約する"""
+    with st.status("記事を要約中...", expanded=True) as status:
         # 記事の本文と画像情報を組み合わせる
         article_content = f"記事タイトル: {article_info['title']}\n\n"
         
@@ -74,17 +72,46 @@ def generate_script(article_info):
         article_content += f"記事本文:\n{article_info['text']}"
         
         prompt = (
-            "以下の記事（本文と画像を含む）を、テーマや結論がしっかり伝わるように、聞き手が理解しやすい長さ（最大20分、ベストな長さはお任せします）で、"
+            "以下の記事（本文と画像を含む）の内容を、重要なポイントを逃さないように要約してください。\n"
+            "特に画像の内容も含めて要約してください。\n\n"
+            "【記事内容】\n"
+            f"{article_content}\n\n"
+            "【要約】"
+        )
+        
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+        )
+        
+        status.update(label="要約完了！", state="complete")
+        return response.choices[0].message.content.strip()
+
+def generate_script(article_info):
+    start_time = time.time()
+    
+    with st.status("台本を生成中...", expanded=True) as status:
+        # まず記事を要約
+        status.update(label="Step 1: 記事を要約中...")
+        summary = summarize_article(article_info)
+        
+        status.update(label="Step 2: 台本を生成中...")
+        prompt = (
+            "以下の要約された記事内容を基に、テーマや結論がしっかり伝わるように、"
+            "聞き手が理解しやすい長さ（最大20分、ベストな長さはお任せします）で、"
             "日本語のポッドキャスト台本にしてください。\n\n"
             "【台本の形式】\n"
             "- プロフェッショナルなホストA（先生役）と、初学者のホストB（生徒役）による対話形式\n"
             "- 各発言の前に「A:」「B:」をつけて、誰の発言かを明確にする\n"
             "- 会話の間は「...」ではなく「、」や「。」を使って自然な間を表現\n"
-            "- 記事内に画像がある場合は、その内容も会話の中で自然に説明してください\n"
+            "- 記事内の画像についても詳しく説明してください\n"
             "- 最後に「【まとめ】」というセクションを作り、記事の重要なポイントを3-5個の箇条書きでまとめる\n"
             "- BGMや効果音などの演出指示は含めない\n\n"
-            "【記事内容】\n"
-            f"{article_content}\n\n"
+            "【記事タイトル】\n"
+            f"{article_info['title']}\n\n"
+            "【要約された内容】\n"
+            f"{summary}\n\n"
             "【ポッドキャスト台本】"
         )
         
@@ -108,6 +135,7 @@ def generate_script(article_info):
         )
         
         generated_text = ""
+        estimated_time = 60  # 約1分を想定
         
         for chunk in response:
             if chunk.choices[0].delta.content:
@@ -223,31 +251,10 @@ if st.button("台本生成＆音声化"):
     else:
         try:
             article_info = get_article_text(url)
-            
-            # 記事の基本情報を表示
-            st.markdown("### 📰 記事情報")
-            st.markdown(f"**タイトル:** {article_info['title']}")
-            if article_info['publish_date']:
-                st.markdown(f"**公開日:** {article_info['publish_date'].strftime('%Y年%m月%d日')}")
-            if article_info['authors']:
-                st.markdown(f"**著者:** {', '.join(article_info['authors'])}")
-            
-            # 画像を表示（最大3枚まで）
-            if article_info['images']:
-                st.markdown("### 🖼️ 記事の画像")
-                cols = st.columns(min(3, len(article_info['images'])))
-                for i, (col, img_url) in enumerate(zip(cols, list(article_info['images'])[:3])):
-                    try:
-                        col.image(img_url, caption=f"画像 {i+1}", use_column_width=True)
-                    except Exception as e:
-                        col.warning(f"画像の読み込みに失敗しました")
-            
-            # 台本生成
             script = generate_script(article_info)
             st.markdown("### 📝 生成された台本")
             st.text_area("", script, height=300)
             
-            # 音声生成
             teacher_file, student_file, summary = generate_tts(script)
             
             st.markdown("### 🎙️ 生成された音声")
@@ -258,6 +265,16 @@ if st.button("台本生成＆音声化"):
             with col2:
                 st.markdown("**生徒役の音声**")
                 st.audio(student_file)
+            
+            # 画像を表示（最大2枚まで）
+            if article_info['images']:
+                st.markdown("### 🖼️ 参考画像")
+                cols = st.columns(min(2, len(article_info['images'])))
+                for i, (col, img_url) in enumerate(zip(cols, list(article_info['images'])[:2])):
+                    try:
+                        col.image(img_url, caption=f"画像 {i+1}", use_container_width=True)
+                    except Exception as e:
+                        col.warning(f"画像の読み込みに失敗しました")
             
             st.markdown("### 📌 重要ポイントまとめ")
             st.markdown(summary)
