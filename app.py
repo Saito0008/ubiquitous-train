@@ -144,7 +144,6 @@ def split_script_by_speaker(script):
     return dialogues
 
 def generate_script(article_info):
-    start_time = time.time()
     total_cost_usd = 0
     
     # ステップ1: 記事の要約
@@ -199,14 +198,10 @@ def generate_script(article_info):
         model="gpt-4",
         messages=[{"role": "user", "content": prompt}],
         max_tokens=4000,
-        temperature=0.8,
-        stream=True
+        temperature=0.8
     )
     
-    generated_text = ""
-    for chunk in response:
-        if chunk.choices[0].delta.content:
-            generated_text += chunk.choices[0].delta.content
+    generated_text = response.choices[0].message.content
     
     # 出力トークン数からコストを計算
     output_tokens = count_tokens(generated_text)
@@ -270,7 +265,6 @@ def generate_tts(script):
     """音声を生成して結合する"""
     # 台本をセリフごとに分割
     dialogues = split_script_by_speaker(script)
-    total_dialogues = len(dialogues)
     
     # 各セリフの音声を生成して結合
     combined_audio = None
