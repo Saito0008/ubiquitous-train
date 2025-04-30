@@ -277,6 +277,7 @@ def generate_tts(script):
 
 def generate_script(article_info):
     total_cost_usd = 0
+    cost_details = []
     
     # 進捗表示用のコンテナを作成
     progress_container = st.container()
@@ -285,20 +286,37 @@ def generate_script(article_info):
         progress_bar = st.progress(0)
         status_text = st.empty()
         time_text = st.empty()
+        countdown_text = st.empty()
+    
+    # カウントダウン用の関数
+    def update_countdown(remaining_seconds):
+        minutes = remaining_seconds // 60
+        seconds = remaining_seconds % 60
+        countdown_text.markdown(f"**残り時間: {minutes}分{seconds}秒**")
     
     # ステップ1: 記事の要約
     with progress_container:
         status_text.markdown("**ステップ1: 記事を要約中...**")
-        time_text.markdown("残り時間: 約30秒")
+        time_text.markdown("予定時間: 約30秒")
         progress_bar.progress(20)
+        
+        # 30秒のカウントダウン
+        for i in range(30, 0, -1):
+            update_countdown(i)
+            time.sleep(1)
     
     summary = summarize_article(article_info)
     
     # ステップ2: 台本の生成
     with progress_container:
         status_text.markdown("**ステップ2: 台本を生成中...**")
-        time_text.markdown("残り時間: 約1分")
+        time_text.markdown("予定時間: 約1分")
         progress_bar.progress(50)
+        
+        # 60秒のカウントダウン
+        for i in range(60, 0, -1):
+            update_countdown(i)
+            time.sleep(1)
     
     prompt = (
         "以下の要約された記事内容を基に、テーマや結論がしっかり伝わるように、"
@@ -341,6 +359,7 @@ def generate_script(article_info):
     input_tokens = count_tokens(prompt)
     input_cost_usd = format_cost_usd(input_tokens)
     total_cost_usd += input_cost_usd
+    cost_details.append(f"GPT-4入力: {input_tokens}トークン (${input_cost_usd:.4f})")
     
     response = client.chat.completions.create(
         model="gpt-4",
@@ -355,20 +374,28 @@ def generate_script(article_info):
     output_tokens = count_tokens(generated_text)
     output_cost_usd = format_cost_usd(output_tokens)
     total_cost_usd += output_cost_usd
+    cost_details.append(f"GPT-4出力: {output_tokens}トークン (${output_cost_usd:.4f})")
     
     # ステップ3: 音声の生成
     with progress_container:
         status_text.markdown("**ステップ3: 音声を生成中...**")
-        time_text.markdown("残り時間: 約2分")
+        time_text.markdown("予定時間: 約2分")
         progress_bar.progress(80)
+        
+        # 120秒のカウントダウン
+        for i in range(120, 0, -1):
+            update_countdown(i)
+            time.sleep(1)
     
     combined_file, tts_cost_usd = generate_tts(generated_text.strip())
     total_cost_usd += tts_cost_usd
+    cost_details.append(f"TTS: ${tts_cost_usd:.4f}")
     
     # 完了
     with progress_container:
         status_text.markdown("**✅ 処理が完了しました！**")
         time_text.empty()
+        countdown_text.empty()
         progress_bar.progress(100)
     
     # 結果表示
@@ -377,6 +404,12 @@ def generate_script(article_info):
     
     st.markdown("### 🔊 生成された音声")
     st.audio(combined_file)
+    
+    # コストの詳細を表示
+    st.markdown("### 💰 コストの内訳")
+    for detail in cost_details:
+        st.write(detail)
+    st.write(f"**合計: ${total_cost_usd:.4f} (約¥{total_cost_usd * get_exchange_rate():.0f})**")
     
     return combined_file, total_cost_usd
 
