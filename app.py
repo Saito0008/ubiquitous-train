@@ -216,15 +216,18 @@ def generate_tts(script):
     sr = None
     
     for i, dialogue in enumerate(dialogues):
-        # テキストをSSML形式に変換
-        ssml_text = convert_to_ssml(dialogue['text'])
+        # テキストを音声生成用に変換
+        processed_text = convert_to_ssml(dialogue['text'])
         
         try:
-            # 音声を生成
+            # 音声を生成（文字列型であることを確認）
+            voice = str(st.session_state.teacher_voice if dialogue['speaker'] == 'teacher' else st.session_state.student_voice)
+            st.write(f"Using voice: {voice} for {dialogue['speaker']}")  # デバッグ用
+            
             response = client.audio.speech.create(
                 model="tts-1",
-                voice=st.session_state.teacher_voice if dialogue['speaker'] == 'teacher' else st.session_state.student_voice,
-                input=ssml_text,
+                voice=voice,
+                input=processed_text,
                 response_format="mp3"
             )
             
@@ -254,7 +257,12 @@ def generate_tts(script):
             
         except Exception as e:
             st.error(f"音声生成中にエラーが発生しました: {str(e)}")
+            st.error(f"Voice value: {voice}, Type: {type(voice)}")  # デバッグ用
             return None, 0
+    
+    if combined_audio is None:
+        st.error("音声の生成に失敗しました。")
+        return None, 0
     
     # 結合した音声を保存
     output_file = "output_combined.mp3"
@@ -389,6 +397,12 @@ VOICE_OPTIONS = {
 # 音声履歴を初期化
 if 'audio_history' not in st.session_state:
     st.session_state.audio_history = load_history()
+
+# 音声の初期値を設定
+if 'teacher_voice' not in st.session_state:
+    st.session_state.teacher_voice = "alloy"
+if 'student_voice' not in st.session_state:
+    st.session_state.student_voice = "nova"
 
 # バージョン情報を表示
 st.markdown("""
